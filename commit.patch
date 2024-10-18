@@ -1,0 +1,229 @@
+diff --git a/Makefile b/Makefile
+index b971308..1f68a81 100644
+--- a/Makefile
++++ b/Makefile
+@@ -157,6 +157,9 @@ UPROGS=\
+ 	$U/_grind\
+ 	$U/_wc\
+ 	$U/_zombie\
++	$U/_sleep\
++	$U/_pingpong\
++	$U/_find\
+ 
+ 
+ ifeq ($(LAB),syscall)
+@@ -242,15 +245,8 @@ qemu-gdb: $K/kernel .gdbinit fs.img
+ 	@echo "*** Now run 'gdb' in another window." 1>&2
+ 	$(QEMU) $(QEMUOPTS) -S $(QEMUGDB)
+ 
+-GDBARGS = 
+-GDBARGS += -ex 'set architecture riscv:rv64'
+-GDBARGS += -ex 'target remote 127.0.0.1:$(GDBPORT)'
+-GDBARGS += -ex 'symbol-file kernel/kernel'
+-GDBARGS += -ex 'set riscv use-compressed-breakpoints yes'
+-
+-
+ gdb: 
+-	$(GDB) $(GDBARGS)
++	$(GDB)
+ 
+ ##
+ ##  FOR testing lab grading script
+diff --git a/commands.gdb b/commands.gdb
+new file mode 100644
+index 0000000..b1db26d
+--- /dev/null
++++ b/commands.gdb
+@@ -0,0 +1,26 @@
++si 4
++si
++b *0x80000086
++c
++u 56
++si
++b main.c:29
++c
++s
++n
++n
++n
++n
++n
++n
++n
++p p->name
++da
++finish
++n
++n
++n
++n
++p p->name
++da
++q
+diff --git a/user/find.c b/user/find.c
+new file mode 100644
+index 0000000..d40d65d
+--- /dev/null
++++ b/user/find.c
+@@ -0,0 +1,82 @@
++#include "kernel/types.h"
++#include "kernel/stat.h"
++#include "user/user.h"
++#include "kernel/fs.h"
++
++void find(const char *path, const char *target) {
++    int fd;
++    struct stat st;
++    struct dirent de;
++    char buf[512], *p;
++
++    // 打开路径
++    if ((fd = open(path, 0)) < 0) {
++        printf("find: cannot open %s\n", path);
++        return;
++    }
++
++    // 获取文件/目录状态
++    if (fstat(fd, &st) < 0) {
++        printf("find: cannot stat %s\n", path);
++        close(fd);
++        return;
++    }
++
++    switch (st.type) {
++        case T_FILE:
++            if (strcmp(path + strlen(path) - strlen(target), target) == 0) {
++                printf("%s\n", path);
++            }
++            break;
++
++        case T_DIR:
++            // 如果当前目录名与 target 相同，则输出
++            if (strcmp(path + strlen(path) - strlen(target), target) == 0) {
++                printf("%s\n", path);
++            }
++
++            if (strlen(path) + 1 + DIRSIZ + 1 > sizeof(buf)) {
++                printf("find: path too long\n");
++                break;
++            }
++
++            strcpy(buf, path);
++            p = buf + strlen(buf);
++            *p++ = '/';
++
++            while (read(fd, &de, sizeof(de)) == sizeof(de)) {
++                if (de.inum == 0)
++                    continue;
++
++                // 跳过 "." 和 ".." 目录
++                if (strcmp(de.name, ".") == 0 || strcmp(de.name, "..") == 0)
++                    continue;
++
++                // 构造完整路径
++                memmove(p, de.name, DIRSIZ);
++                p[DIRSIZ] = 0;
++
++                if (stat(buf, &st) < 0) {
++                    printf("find: cannot stat %s\n", buf);
++                    continue;
++                }
++
++                // 递归查找
++                find(buf, target);
++            }
++            break;
++    }
++
++    close(fd);
++}
++
++
++int main(int argc, char *argv[]) {
++    if (argc < 3) {
++        printf("Usage: find <path> <filename>\n");
++        exit(0);
++    }
++    
++    find(argv[1], argv[2]);
++    exit(0);
++}
+diff --git a/user/pingpong.c b/user/pingpong.c
+new file mode 100644
+index 0000000..70e794a
+--- /dev/null
++++ b/user/pingpong.c
+@@ -0,0 +1,52 @@
++#include "kernel/types.h"
++#include "user.h"
++
++int main(int argc, char* argv[]) {
++    int c2f[2];
++    int f2c[2];
++    pipe(c2f);
++    pipe(f2c);
++
++    if (fork() == 0) {
++        /* 子进程 */
++        char fpid[10];
++        char cpid[10];
++
++        itoa(getpid(), cpid);
++
++        // 读取父进程的 PID
++        close(f2c[1]);
++        read(f2c[0], fpid, 10);
++        close(f2c[0]);
++
++        // printf("fpid = %s\n", fpid);
++        printf("%s: received ping from pid %s\n", cpid, fpid);
++
++        // 发送子进程的 PID
++        close(c2f[0]);      
++        write(c2f[1], cpid, 10);
++        close(c2f[1]);
++        
++    } else {
++        /* 父进程 */
++        char fpid[10];
++        char cpid[10];
++
++        itoa(getpid(), fpid);
++
++        // 发送父进程的 PID
++        close(f2c[0]);      
++        write(f2c[1], fpid, 10);
++        close(f2c[1]);
++
++        // 读取子进程的 PID
++        close(c2f[1]);
++        read(c2f[0], cpid, 10);
++        close(c2f[0]);
++
++        // printf("cpid = %s\n", cpid);
++        printf("%s: received pong from pid %s\n", fpid, cpid);
++    }
++
++    exit(0);  // 正常退出
++}
+diff --git a/user/sleep.c b/user/sleep.c
+new file mode 100644
+index 0000000..6ea1b66
+--- /dev/null
++++ b/user/sleep.c
+@@ -0,0 +1,13 @@
++#include "kernel/types.h"
++#include "user.h"
++
++int main(int argc, char* argv[]) {
++    if (argc != 2) {
++        printf("Sleep needs one argument!\n");
++        exit(-1);
++    }
++    int ticks = atoi(argv[1]);
++    sleep(ticks);
++    printf("(nothing happends for a little while)\n");
++    exit(0);
++}
+\ No newline at end of file
