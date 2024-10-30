@@ -20,8 +20,12 @@ uint64 sys_fork(void) { return fork(); }
 
 uint64 sys_wait(void) {
   uint64 p;
-  if (argaddr(0, &p) < 0) return -1;
-  return wait(p);
+  int flag;   // 添加的非阻塞选项参数
+
+  if (argaddr(0, &p) < 0) return -1;    // 这个是尝试获取第一个参数
+  if (argint(1, &flag) < 0) return -1;  // 尝试获取第二个参数
+
+  return wait(p, flag);
 }
 
 uint64 sys_sbrk(void) {
@@ -81,3 +85,11 @@ uint64 sys_rename(void) {
   p->name[len] = '\0';
   return 0;
 }
+
+// sys_yield()
+uint64 sys_yield(void){
+  yield();
+  return 0;
+}
+
+

@@ -37,3 +37,4 @@ entry("sbrk");
 entry("sleep");
 entry("uptime");
 entry("rename");
+entry("yield");     # 生成相关的用户接口

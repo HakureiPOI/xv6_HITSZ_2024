@@ -24,6 +24,7 @@ char* sbrk(int);
 int sleep(int);
 int uptime(void);
 int rename(const char*);
+void yield(void);       // 添加的系统调用声明，以便用户程序可以使用 yield()
 
 // ulib.c
 int stat(const char*, struct stat*);

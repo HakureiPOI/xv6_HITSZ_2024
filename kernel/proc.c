@@ -291,6 +291,25 @@ void reparent(struct proc *p) {
   }
 }
 
+// 定义状态字符串数组
+char *pstate[] = {
+    "unused",   // 状态值为 0
+    "sleeping", // 状态值为 1
+    "runnable", // 状态值为 2
+    "running",  // 状态值为 3
+    "zombie"    // 状态值为 4
+};
+
+// 辅助函数：将进程状态转换为字符串
+const char* state_to_string(enum procstate state) {
+    // 确保状态在合理范围内
+    if (state >= 0 && state < sizeof(pstate) / sizeof(pstate[0])) {
+        return pstate[state];
+    } else {
+        return "unknown"; // 状态值不在已定义范围内
+    }
+}
+
 // Exit the current process.  Does not return.
 // An exited process remains in the zombie state
 // until its parent calls wait().
@@ -330,6 +349,24 @@ void exit(int status) {
   // as anything else.
   acquire(&p->lock);
   struct proc *original_parent = p->parent;
+
+  // 输出父进程信息
+  exit_info("proc %d exit, parent pid %d, name %s, state %s\n",
+            p->pid, original_parent->pid, original_parent->name, state_to_string(original_parent->state));
+
+  // 在重新分配子进程之前，输出所有子进程的信息
+  struct proc *pp;
+  int child_cnt = 0;
+  for (pp = proc; pp < &proc[NPROC]; pp++) {
+    if (pp->parent == p) {
+      acquire(&pp->lock);
+      exit_info("proc %d exit, child %d, pid %d, name %s, state %s\n",
+                p->pid, child_cnt, pp->pid, pp->name, state_to_string(pp->state));
+      release(&pp->lock);
+      child_cnt++;
+    }
+  }
+
   release(&p->lock);
 
   // we need the parent's lock in order to wake it up from wait().
@@ -354,9 +391,10 @@ void exit(int status) {
   panic("zombie exit");
 }
 
+
 // Wait for a child process to exit and return its pid.
 // Return -1 if this process has no children.
-int wait(uint64 addr) {
+int wait(uint64 addr, int flag) {
   struct proc *np;
   int havekids, pid;
   struct proc *p = myproc();
@@ -395,7 +433,8 @@ int wait(uint64 addr) {
     }
 
     // No point waiting if we don't have any children.
-    if (!havekids || p->killed) {
+    // or if non-blocking wait is requested.
+    if (!havekids || p->killed || flag == 1) {
       release(&p->lock);
       return -1;
     }
@@ -471,11 +510,30 @@ void sched(void) {
 // Give up the CPU for one scheduling round.
 void yield(void) {
   struct proc *p = myproc();
+
   acquire(&p->lock);
+  printf("Save the context of the process to the memory region from address %p to %p\n", &p->context, (char*)(&p->context) + sizeof(p->context));
+  printf("Current running process pid is %d and user pc is %p\n", p->pid, p->trapframe->epc);
+
+  for (struct proc *c = proc; c < &proc[NPROC]; c++) {
+    if (c != p) {
+      acquire(&c->lock);
+      if (c->state == RUNNABLE) {
+        printf("Next runnable process pid is %d and user pc is %p\n", c->pid, c->trapframe->epc);
+        release(&c->lock);
+        break;
+      }
+      release(&c->lock);
+    }
+  }
+
   p->state = RUNNABLE;
   sched();
   release(&p->lock);
 }
+
+
+
 
 // A fork child's very first scheduling by scheduler()
 // will swtch to forkret.
