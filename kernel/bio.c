@@ -43,8 +43,6 @@ uint hash(uint n) {
 void binit(void) {
   struct buf *b;
 
-  initlock(&bcache.overall_lock, "bcache");
-
   // 初始化每个哈希桶的锁
   for (int i = 0; i < NBUCKETS; i++) {
     snprintf(bcache_name[i], sizeof(bcache_name[i]), "bcache%d", i);
