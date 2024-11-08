@@ -27,7 +27,6 @@
 
 // 使用多个锁管理不同哈希桶的磁盘缓存
 struct {
-  struct spinlock overall_lock;   // 跨桶操作的全局锁
   struct spinlock lock[NBUCKETS]; // 每个哈希桶都有一个锁
   struct buf buf[NBUF];
   struct buf hashbucket[NBUCKETS]; // 每个哈希桶是一个缓存块的链表
@@ -102,7 +101,6 @@ static struct buf* bget(uint dev, uint blockno) {
 
   // 当前桶中没有空闲缓冲区，释放锁并获取全局锁
   release(&bcache.lock[key]);
-  acquire(&bcache.overall_lock);
 
   // 在其他哈希桶中查找空闲缓冲区
   for (int i = 0; i < NBUCKETS; i++) {
@@ -130,7 +128,6 @@ static struct buf* bget(uint dev, uint blockno) {
         release(&bcache.lock[key]);
 
         release(&bcache.lock[i]);
-        release(&bcache.overall_lock);
         acquiresleep(&b->lock);
         return b;
       }
@@ -138,7 +135,7 @@ static struct buf* bget(uint dev, uint blockno) {
     release(&bcache.lock[i]);
   }
 
-  release(&bcache.overall_lock);
+  // release(&bcache.overall_lock);
   panic("bget: no buffers");
 }
 
