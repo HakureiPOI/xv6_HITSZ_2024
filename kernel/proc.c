@@ -54,14 +54,11 @@ void procinit(void) {
     // 分配一页内存作为进程的内核栈，并保存其物理地址到 kstack_pa
     char *pa = kalloc();
     if (pa == 0)  panic("kalloc");
-    uint64 va = KSTACK((int)(p - proc));  // 计算虚拟地址
-    p->kstack_pa = (uint64)pa;            // 保存物理地址
-    p->kstack = va;                       // 保存虚拟地址
-
-
-    // 注意：此处不立即将内核栈映射到内核页表中，而是在 allocproc() 中完成
+    uint64 va = KSTACK((int)(p - proc));            // 计算虚拟地址
+    kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);  // 在内核页表建立内核栈的映射
+    p->kstack_pa = (uint64)pa;                      // 保存物理地址
+    p->kstack = va;                                 // 保存虚拟地址
   }
-
   // 初始化全局内核页表
   kvminithart();
 }
@@ -176,46 +173,29 @@ found:
 
 // Lab4 修改 freeproc()
 // 辅助函数
-void kpagetable_free(pagetable_t pagetable) {
+void kpagetable_free(pagetable_t pagetable){
   for (int i = 0; i < 512; i++) {
-    pte_t pte = pagetable[i];
-
-    // 如果 PTE 是有效的并指向下一级页表
-    if ((pte & PTE_V) && (pte & (PTE_R | PTE_W | PTE_X)) == 0) {
-      uint64 child = PTE2PA(pte);
-      
-      // 递归释放子页表
-      kpagetable_free((pagetable_t)child);
-
-      // 清除当前页表项
-      pagetable[i] = 0;
-    } else if (pte & PTE_V) {
-      // 如果是叶子页表
-      uint64 pa = PTE2PA(pte);
-      
-      // 释放物理页帧
-      kfree((void *)pa);
-
-      // 清除当前页表项
-      pagetable[i] = 0;
+      pte_t pte = pagetable[i];
+      if ((pte & PTE_V) && (pte & (PTE_R | PTE_W | PTE_X)) == 0) {
+        uint64 child = PTE2PA(pte);
+        // 递归释放子页表及其对应页面
+        kpagetable_free((pagetable_t)child);
+        // 释放页表项的使用
+        pagetable[i] = 0;
+      } else if (pte & PTE_V) {   
+        // 释放叶子页表
+        pagetable[i] = 0;
+      }
     }
-  }
-
-  // 释放当前页表
-  kfree((void *)pagetable);
+    kfree((void *)pagetable);
 }
 
 static void freeproc(struct proc *p) {
-  // 释放 trapframe
-  if (p->trapframe) 
-    kfree((void *)p->trapframe);
+  if (p->trapframe) kfree((void *)p->trapframe);
   p->trapframe = 0;
-
-  // 释放用户页表
-  if (p->pagetable) 
-    proc_freepagetable(p->pagetable, p->sz);
+  // 释放该进程的共享内核页表
+  if (p->pagetable) proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
-
   p->sz = 0;
   p->pid = 0;
   p->parent = 0;
@@ -225,19 +205,16 @@ static void freeproc(struct proc *p) {
   p->xstate = 0;
   p->state = UNUSED;
 
-  // 内核页表部分处理：避免重复释放共享区域
-  if (p->k_pagetable) {
-    pagetable_t pa = (pagetable_t)PTE2PA(p->k_pagetable[0]);
-
-    // 将共享区域对应的页表项置零 (避免释放)
-    for (int i = 0; i < 0x60; i++) { // 假设共享区域为 0-95 项
-      pa[i] = 0;
-    }
-
-    // 递归释放该进程的独立内核页表
-    kpagetable_free(p->k_pagetable);
-    p->k_pagetable = 0;
+  // 将内核页表中次级页表的0-95项置零，避免重复回收
+  pagetable_t pa = (pagetable_t)PTE2PA(p->k_pagetable[0]);
+  for (int i = 0; i < 0x60; i++) {
+    pa[i] = 0;
   }
+
+  // 释放该进程的独立内核页表
+  if (p->k_pagetable) kpagetable_free(p->k_pagetable);
+  p->k_pagetable = 0;
+
 }
 
 // Create a user page table for a given process,
