@@ -379,3 +379,42 @@ int test_pagetable() {
   printf("test_pagetable: %d\n", satp != gsatp);
   return satp != gsatp;
 }
+
+void vmprint(pagetable_t pagetable) {
+    printf("page table %p\n", pagetable);
+    vmprint_recursive(pagetable, 2, 0);
+}
+
+void vmprint_recursive(pagetable_t pagetable, int level, uint64 va_base) {
+    for (int i = 0; i < 512; i++) {
+        pte_t pte = pagetable[i];
+        if (pte & PTE_V) {
+            uint64 pa = PTE2PA(pte);
+            char flags[5] = {'-', '-', '-', '-', '\0'}; // 使用'-'表示无权限
+            if (pte & PTE_R) flags[0] = 'r';
+            if (pte & PTE_W) flags[1] = 'w';
+            if (pte & PTE_X) flags[2] = 'x';
+            if (pte & PTE_U) flags[3] = 'u';
+
+            // 打印层次缩进
+            for (int j = 2; j > level; j--) {
+                printf(" .. ");
+            }
+
+            if ((pte & (PTE_R | PTE_W | PTE_X)) == 0) {
+                // 非叶子节点
+                printf("idx: %d: pa: %p, flags: [%s]\n", i, (void *)pa, flags);
+                vmprint_recursive((pagetable_t)pa, level - 1, va_base | (i << (9 * level + 12)));
+            } else {
+                // 叶子节点
+                uint64 va = va_base | (i << (9 * level + 12));
+                printf("idx: %d: va: %p -> pa: %p, flags: [%s]\n", i, (void *)va, (void *)pa, flags);
+            }
+        }
+    }
+}
+
+
+
+
+
