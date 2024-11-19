@@ -380,52 +380,56 @@ int test_pagetable() {
   return satp != gsatp;
 }
 
+// *** Task 1 ***//
 void vmprint(pagetable_t pgtbl) {
-    printf("page table %p\n", pgtbl);
-    uint64 idx = 0;
-    vm_recursive(pgtbl, 1, idx);
+  printf("page table %p\n", pgtbl);
+  uint64 idx = 0;
+  vm_recursive(pgtbl, 1, idx);
 }
 
 // 递归函数
 void vm_recursive(pagetable_t pgtbl, int depth, uint64 idx) {
-    for (int i = 0; i < 512; i++) {
-        pte_t pte = pgtbl[i];
-        char rwxu[5] = "----"; // 为字符串结尾留出空间
+  for (int i = 0; i < 512; i++) {
+    pte_t pte = pgtbl[i];
+    char rwxu[5] = "----"; // 为字符串结尾留出空间
 
-        // 当前页表项有效
-        if (pte & PTE_V) {
-            printf("||");
+    // 当前页表项有效
+    if (pte & PTE_V) {
+      printf("||");
 
-            // 设置权限标志
-            if (pte & PTE_R) rwxu[0] = 'r';
-            if (pte & PTE_W) rwxu[1] = 'w';
-            if (pte & PTE_X) rwxu[2] = 'x';
-            if (pte & PTE_U) rwxu[3] = 'u';
+      // 设置权限标志
+      if (pte & PTE_R) rwxu[0] = 'r';
+      if (pte & PTE_W) rwxu[1] = 'w';
+      if (pte & PTE_X) rwxu[2] = 'x';
+      if (pte & PTE_U) rwxu[3] = 'u';
 
-            // 缩进显示
-            for (int j = 1; j < depth; j++) {
-                printf("   ||");
-            }
+      // 缩进显示
+      for (int j = 1; j < depth; j++) {
+        printf("   ||");
+      }
 
-            // 判断是否是指向较低级页表的页表项
-            if ((pte & (PTE_R | PTE_W | PTE_X)) == 0) {
-                idx = (idx + i) << 9;
+      // 判断是否是指向较低级页表的页表项
+      if ((pte & (PTE_R | PTE_W | PTE_X)) == 0) {
+        idx = (idx + i) << 9;
 
-                printf("idx: %d: pa: %p, flags: %s\n", i, PTE2PA(pte), rwxu);
-                uint64 child = PTE2PA(pte);
-                vm_recursive((pagetable_t)child, depth + 1, idx);
+        printf("idx: %d: pa: %p, flags: %s\n", i, PTE2PA(pte), rwxu);
+        uint64 child = PTE2PA(pte);
+        vm_recursive((pagetable_t)child, depth + 1, idx);
 
-                idx = (idx >> 9) - i;
-            } else {
-                idx = (idx + i) << 12;
+        idx = (idx >> 9) - i;
+      } else {
+        idx = (idx + i) << 12;
 
-                printf("idx: %d: va: %p -> pa: %p, flags: %s\n", i, idx, PTE2PA(pte), rwxu);
+        printf("idx: %d: va: %p -> pa: %p, flags: %s\n", i, idx, PTE2PA(pte), rwxu);
 
-                idx = (idx >> 12) - i;
-            }
-        }
+        idx = (idx >> 12) - i;
+      }
     }
+  }
 }
+
+
+// *** Task 2 ***//
 
 
 
