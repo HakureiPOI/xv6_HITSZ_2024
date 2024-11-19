@@ -179,8 +179,9 @@ int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
 int             test_pagetable();
+
 void            vmprint(pagetable_t pagetable);     // Lab4 任务一
-void            vmprint_recursive(pagetable_t pagetable, int level, uint64 va_base);
+void            vm_recursive(pagetable_t pgtbl, int depth, uint64 idx);
 
 // plic.c
 void            plicinit(void);

@@ -380,39 +380,53 @@ int test_pagetable() {
   return satp != gsatp;
 }
 
-void vmprint(pagetable_t pagetable) {
-    printf("page table %p\n", pagetable);
-    vmprint_recursive(pagetable, 2, 0);
+void vmprint(pagetable_t pgtbl) {
+    printf("page table %p\n", pgtbl);
+    uint64 idx = 0;
+    vm_recursive(pgtbl, 1, idx);
 }
 
-void vmprint_recursive(pagetable_t pagetable, int level, uint64 va_base) {
+// 递归函数
+void vm_recursive(pagetable_t pgtbl, int depth, uint64 idx) {
     for (int i = 0; i < 512; i++) {
-        pte_t pte = pagetable[i];
-        if (pte & PTE_V) {
-            uint64 pa = PTE2PA(pte);
-            char flags[5] = {'-', '-', '-', '-', '\0'}; // 使用'-'表示无权限
-            if (pte & PTE_R) flags[0] = 'r';
-            if (pte & PTE_W) flags[1] = 'w';
-            if (pte & PTE_X) flags[2] = 'x';
-            if (pte & PTE_U) flags[3] = 'u';
+        pte_t pte = pgtbl[i];
+        char rwxu[5] = "----"; // 为字符串结尾留出空间
 
-            // 打印层次缩进
-            for (int j = 2; j > level; j--) {
-                printf(" .. ");
+        // 当前页表项有效
+        if (pte & PTE_V) {
+            printf("||");
+
+            // 设置权限标志
+            if (pte & PTE_R) rwxu[0] = 'r';
+            if (pte & PTE_W) rwxu[1] = 'w';
+            if (pte & PTE_X) rwxu[2] = 'x';
+            if (pte & PTE_U) rwxu[3] = 'u';
+
+            // 缩进显示
+            for (int j = 1; j < depth; j++) {
+                printf("   ||");
             }
 
+            // 判断是否是指向较低级页表的页表项
             if ((pte & (PTE_R | PTE_W | PTE_X)) == 0) {
-                // 非叶子节点
-                printf("idx: %d: pa: %p, flags: [%s]\n", i, (void *)pa, flags);
-                vmprint_recursive((pagetable_t)pa, level - 1, va_base | (i << (9 * level + 12)));
+                idx = (idx + i) << 9;
+
+                printf("idx: %d: pa: %p, flags: %s\n", i, PTE2PA(pte), rwxu);
+                uint64 child = PTE2PA(pte);
+                vm_recursive((pagetable_t)child, depth + 1, idx);
+
+                idx = (idx >> 9) - i;
             } else {
-                // 叶子节点
-                uint64 va = va_base | (i << (9 * level + 12));
-                printf("idx: %d: va: %p -> pa: %p, flags: [%s]\n", i, (void *)va, (void *)pa, flags);
+                idx = (idx + i) << 12;
+
+                printf("idx: %d: va: %p -> pa: %p, flags: %s\n", i, idx, PTE2PA(pte), rwxu);
+
+                idx = (idx >> 12) - i;
             }
         }
     }
 }
+
 
 
 
