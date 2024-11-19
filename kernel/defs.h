@@ -180,8 +180,10 @@ int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
 int             test_pagetable();
 
-void            vmprint(pagetable_t pagetable);     // Lab4 任务一
+void            vmprint(pagetable_t pagetable);     
 void            vm_recursive(pagetable_t pgtbl, int depth, uint64 idx);
+void            kvmmap_proc(pagetable_t k_pagetable, uint64 va, uint64 pa, uint64 sz, int perm);
+pagetable_t     kvminit_proc();
 
 // plic.c
 void            plicinit(void);

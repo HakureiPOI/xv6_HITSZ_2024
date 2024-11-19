@@ -381,6 +381,8 @@ int test_pagetable() {
 }
 
 // *** Task 1 ***//
+
+// vmprint()
 void vmprint(pagetable_t pgtbl) {
   printf("page table %p\n", pgtbl);
   uint64 idx = 0;
@@ -431,6 +433,44 @@ void vm_recursive(pagetable_t pgtbl, int depth, uint64 idx) {
 
 // *** Task 2 ***//
 
+// 改写 kvmmap，用于调用 mappages() 将 va 映射到 pa
+void kvmmap_proc(pagetable_t k_pagetable, uint64 va, uint64 pa, uint64 sz, int perm) {
+  if (mappages(k_pagetable, va, sz, pa, perm) != 0) panic("kvmmap_proc");
+}
+
+// 模仿 kvminit() 实现创建进程独立内核页表的函数
+pagetable_t kvminit_proc() {
+  // 直接创建一个新的内核页表
+  pagetable_t k_pagetable = (pagetable_t)kalloc();
+  // 页表在创建时可能包含旧数据，使用 memset 清零以初始化为空表
+  memset(k_pagetable, 0, PGSIZE);     
+
+  // uart registers
+  kvmmap_proc(k_pagetable, UART0, UART0, PGSIZE, PTE_R | PTE_W);
+
+  // virtio mmio disk interface
+  kvmmap_proc(k_pagetable, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+
+  // CLINT
+  // 实现的时候不要映射CLINT，否则会在任务三发生地址重合问题
+  // kvmmap(CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+
+  // PLIC
+  kvmmap_proc(k_pagetable, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+
+  // map kernel text executable and read-only.
+  kvmmap_proc(k_pagetable, KERNBASE, KERNBASE, (uint64)etext - KERNBASE, PTE_R | PTE_X);
+
+  // map kernel data and the physical RAM we'll make use of.
+  kvmmap_proc(k_pagetable, (uint64)etext, (uint64)etext, PHYSTOP - (uint64)etext, PTE_R | PTE_W);
+
+  // map the trampoline for trap entry/exit to
+  // the highest virtual address in the kernel.
+  kvmmap_proc(k_pagetable, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+
+  // 返回完成的页表
+  return k_pagetable;
+}
 
 
 

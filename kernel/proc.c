@@ -21,25 +21,51 @@ static void freeproc(struct proc *p);
 
 extern char trampoline[];  // trampoline.S
 
-// initialize the proc table at boot time.
+// // initialize the proc table at boot time.
+// void procinit(void) {
+//   struct proc *p;
+
+//   initlock(&pid_lock, "nextpid");
+//   for (p = proc; p < &proc[NPROC]; p++) {
+//     initlock(&p->lock, "proc");
+
+//     // Allocate a page for the process's kernel stack.
+//     // Map it high in memory, followed by an invalid
+//     // guard page.
+//     char *pa = kalloc();
+//     if (pa == 0) panic("kalloc");
+//     uint64 va = KSTACK((int)(p - proc));
+//     kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+//     p->kstack = va;
+//   }
+//   kvminithart();
+// }
+
+// Lab4 修改 procinit()
+// Initialize the proc table at boot time.
 void procinit(void) {
   struct proc *p;
 
   initlock(&pid_lock, "nextpid");
   for (p = proc; p < &proc[NPROC]; p++) {
+    // 初始化进程的锁
     initlock(&p->lock, "proc");
 
-    // Allocate a page for the process's kernel stack.
-    // Map it high in memory, followed by an invalid
-    // guard page.
+    // 分配一页内存作为进程的内核栈，并保存其物理地址到 kstack_pa
     char *pa = kalloc();
-    if (pa == 0) panic("kalloc");
-    uint64 va = KSTACK((int)(p - proc));
-    kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
-    p->kstack = va;
+    if (pa == 0)  panic("kalloc");
+    uint64 va = KSTACK((int)(p - proc));  // 计算虚拟地址
+    p->kstack_pa = (uint64)pa;            // 保存物理地址
+    p->kstack = va;                       // 保存虚拟地址
+
+
+    // 注意：此处不立即将内核栈映射到内核页表中，而是在 allocproc() 中完成
   }
+
+  // 初始化全局内核页表
   kvminithart();
 }
+
 
 // Must be called with interrupts disabled,
 // to prevent race with process being moved
@@ -103,6 +129,16 @@ found:
     return 0;
   }
 
+  // 创建一个新的独立内核页表
+  p->k_pagetable = kvminit_proc();
+  if (p->k_pagetable == 0) {
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
+  kvmmap_proc(p->k_pagetable, p->kstack, p->kstack_pa, PGSIZE, PTE_R | PTE_W);
+
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if (p->pagetable == 0) {
@@ -123,11 +159,63 @@ found:
 // free a proc structure and the data hanging from it,
 // including user pages.
 // p->lock must be held.
+// static void freeproc(struct proc *p) {
+//   if (p->trapframe) kfree((void *)p->trapframe);
+//   p->trapframe = 0;
+//   if (p->pagetable) proc_freepagetable(p->pagetable, p->sz);
+//   p->pagetable = 0;
+//   p->sz = 0;
+//   p->pid = 0;
+//   p->parent = 0;
+//   p->name[0] = 0;
+//   p->chan = 0;
+//   p->killed = 0;
+//   p->xstate = 0;
+//   p->state = UNUSED;
+// }
+
+// Lab4 修改 freeproc()
+// 辅助函数
+void kpagetable_free(pagetable_t pagetable) {
+  for (int i = 0; i < 512; i++) {
+    pte_t pte = pagetable[i];
+
+    // 如果 PTE 是有效的并指向下一级页表
+    if ((pte & PTE_V) && (pte & (PTE_R | PTE_W | PTE_X)) == 0) {
+      uint64 child = PTE2PA(pte);
+      
+      // 递归释放子页表
+      kpagetable_free((pagetable_t)child);
+
+      // 清除当前页表项
+      pagetable[i] = 0;
+    } else if (pte & PTE_V) {
+      // 如果是叶子页表
+      uint64 pa = PTE2PA(pte);
+      
+      // 释放物理页帧
+      kfree((void *)pa);
+
+      // 清除当前页表项
+      pagetable[i] = 0;
+    }
+  }
+
+  // 释放当前页表
+  kfree((void *)pagetable);
+}
+
 static void freeproc(struct proc *p) {
-  if (p->trapframe) kfree((void *)p->trapframe);
+  // 释放 trapframe
+  if (p->trapframe) 
+    kfree((void *)p->trapframe);
   p->trapframe = 0;
-  if (p->pagetable) proc_freepagetable(p->pagetable, p->sz);
+
+  // 释放用户页表
+  if (p->pagetable) 
+    proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
+
   p->sz = 0;
   p->pid = 0;
   p->parent = 0;
@@ -136,6 +224,20 @@ static void freeproc(struct proc *p) {
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+
+  // 内核页表部分处理：避免重复释放共享区域
+  if (p->k_pagetable) {
+    pagetable_t pa = (pagetable_t)PTE2PA(p->k_pagetable[0]);
+
+    // 将共享区域对应的页表项置零 (避免释放)
+    for (int i = 0; i < 0x60; i++) { // 假设共享区域为 0-95 项
+      pa[i] = 0;
+    }
+
+    // 递归释放该进程的独立内核页表
+    kpagetable_free(p->k_pagetable);
+    p->k_pagetable = 0;
+  }
 }
 
 // Create a user page table for a given process,
@@ -430,7 +532,16 @@ void scheduler(void) {
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+
+        // 切换到进程的独立内核页表
+        w_satp(MAKE_SATP(p->k_pagetable));
+        sfence_vma(); // 刷新 TLB，确保新页表生效
+
+        // 上下文切换到选定的进程
         swtch(&c->context, &p->context);
+
+        // 恢复至全局内核页表
+        kvminithart();
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.

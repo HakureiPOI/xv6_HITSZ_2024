@@ -104,6 +104,6 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
 
-  pagetable_t k_pagetable; // 用于存储进程的独立内核页表
-  uint64 kstack_pa;       // 用于保存内核栈的物理地址
+  pagetable_t k_pagetable;     // 用于存储进程的独立内核页表
+  uint64 kstack_pa;            // 用于保存内核栈的物理地址
 };
