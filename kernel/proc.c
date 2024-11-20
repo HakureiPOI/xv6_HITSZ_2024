@@ -281,6 +281,9 @@ void userinit(void) {
 
   p->state = RUNNABLE;
 
+  // 同步内核页表
+  sync_pagetable(p->k_pagetable, p->pagetable);
+
   release(&p->lock);
 }
 
@@ -299,6 +302,10 @@ int growproc(int n) {
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
   p->sz = sz;
+
+  // 同步内核页表
+  sync_pagetable(p->k_pagetable, p->pagetable);
+
   return 0;
 }
 
@@ -340,6 +347,9 @@ int fork(void) {
   pid = np->pid;
 
   np->state = RUNNABLE;
+
+  // 同步子进程的内核页表
+  sync_pagetable(np->k_pagetable, np->pagetable);
 
   release(&np->lock);
 

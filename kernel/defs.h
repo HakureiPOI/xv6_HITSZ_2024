@@ -184,6 +184,11 @@ void            vmprint(pagetable_t pagetable);
 void            vm_recursive(pagetable_t pgtbl, int depth, uint64 idx);
 void            kvmmap_proc(pagetable_t k_pagetable, uint64 va, uint64 pa, uint64 sz, int perm);
 pagetable_t     kvminit_proc();
+void            sync_pagetable(pagetable_t k_pagetable, pagetable_t pagetable);
+int             copyin_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len);
+int             copyinstr_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max);
+
+
 
 // plic.c
 void            plicinit(void);

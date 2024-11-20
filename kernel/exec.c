@@ -102,6 +102,9 @@ int exec(char *path, char **argv) {
     vmprint(p->pagetable);
   }
 
+  // 加载成功后，同步内核页表
+  sync_pagetable(p->k_pagetable, p->pagetable);
+
   return argc;  // this ends up in a0, the first argument to main(argc, argv)
 
 bad:
@@ -110,6 +113,10 @@ bad:
     iunlockput(ip);
     end_op();
   }
+
+  // 加载成功后，同步内核页表
+  sync_pagetable(p->k_pagetable, p->pagetable);
+
   return -1;
 }
 

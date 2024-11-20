@@ -316,21 +316,30 @@ int copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len) {
 // Copy len bytes to dst from virtual address srcva in a given page table.
 // Return 0 on success, -1 on error.
 int copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len) {
-  uint64 n, va0, pa0;
+  // uint64 n, va0, pa0;
 
-  while (len > 0) {
-    va0 = PGROUNDDOWN(srcva);
-    pa0 = walkaddr(pagetable, va0);
-    if (pa0 == 0) return -1;
-    n = PGSIZE - (srcva - va0);
-    if (n > len) n = len;
-    memmove(dst, (void *)(pa0 + (srcva - va0)), n);
+  // while (len > 0) {
+  //   va0 = PGROUNDDOWN(srcva);
+  //   pa0 = walkaddr(pagetable, va0);
+  //   if (pa0 == 0) return -1;
+  //   n = PGSIZE - (srcva - va0);
+  //   if (n > len) n = len;
+  //   memmove(dst, (void *)(pa0 + (srcva - va0)), n);
 
-    len -= n;
-    dst += n;
-    srcva = va0 + PGSIZE;
-  }
-  return 0;
+  //   len -= n;
+  //   dst += n;
+  //   srcva = va0 + PGSIZE;
+  // }
+  // return 0;
+
+  // 设置 SSTATUS 寄存器的 SUM 位
+  w_sstatus(r_sstatus() | SSTATUS_SUM);
+  // 调用 copyin_new() 执行实际的用户空间数据拷贝
+  int result = copyin_new(pagetable, dst, srcva, len);
+  // 恢复 SSTATUS 寄存器的 SUM 位
+  w_sstatus(r_sstatus() & ~SSTATUS_SUM);
+
+  return result;
 }
 
 // Copy a null-terminated string from user to kernel.
@@ -338,38 +347,47 @@ int copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len) {
 // until a '\0', or max.
 // Return 0 on success, -1 on error.
 int copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max) {
-  uint64 n, va0, pa0;
-  int got_null = 0;
+  // uint64 n, va0, pa0;
+  // int got_null = 0;
 
-  while (got_null == 0 && max > 0) {
-    va0 = PGROUNDDOWN(srcva);
-    pa0 = walkaddr(pagetable, va0);
-    if (pa0 == 0) return -1;
-    n = PGSIZE - (srcva - va0);
-    if (n > max) n = max;
+  // while (got_null == 0 && max > 0) {
+  //   va0 = PGROUNDDOWN(srcva);
+  //   pa0 = walkaddr(pagetable, va0);
+  //   if (pa0 == 0) return -1;
+  //   n = PGSIZE - (srcva - va0);
+  //   if (n > max) n = max;
 
-    char *p = (char *)(pa0 + (srcva - va0));
-    while (n > 0) {
-      if (*p == '\0') {
-        *dst = '\0';
-        got_null = 1;
-        break;
-      } else {
-        *dst = *p;
-      }
-      --n;
-      --max;
-      p++;
-      dst++;
-    }
+  //   char *p = (char *)(pa0 + (srcva - va0));
+  //   while (n > 0) {
+  //     if (*p == '\0') {
+  //       *dst = '\0';
+  //       got_null = 1;
+  //       break;
+  //     } else {
+  //       *dst = *p;
+  //     }
+  //     --n;
+  //     --max;
+  //     p++;
+  //     dst++;
+  //   }
 
-    srcva = va0 + PGSIZE;
-  }
-  if (got_null) {
-    return 0;
-  } else {
-    return -1;
-  }
+  //   srcva = va0 + PGSIZE;
+  // }
+  // if (got_null) {
+  //   return 0;
+  // } else {
+  //   return -1;
+  // }
+
+  // 设置 SSTATUS 寄存器的 SUM 位，允许内核访问用户空间
+  w_sstatus(r_sstatus() | SSTATUS_SUM);
+  // 调用 copyinstr_new() 完成实际功能
+  int result = copyinstr_new(pagetable, dst, srcva, max);
+  // 恢复 SSTATUS 寄存器的 SUM 位，防止内核继续访问用户空间
+  w_sstatus(r_sstatus() & ~SSTATUS_SUM);
+
+  return result;
 }
 
 // check if use global kpgtbl or not
@@ -473,6 +491,13 @@ pagetable_t kvminit_proc() {
 }
 
 
+// *** Task 3 ***//
+void sync_pagetable(pagetable_t kernel_pagetable, pagetable_t user_pagetable) {
+  pagetable_t user_pa = (pagetable_t)PTE2PA(user_pagetable[0]);
+  pagetable_t kernel_pa = (pagetable_t)PTE2PA(kernel_pagetable[0]);
 
-
-
+  for(int i = 0; i < 0x60; i++) {
+    // 将用户页表复制到内核页表中
+    kernel_pa[i] = user_pa[i];
+  }
+}
