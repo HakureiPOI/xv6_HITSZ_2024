@@ -496,7 +496,7 @@ void sync_pagetable(pagetable_t kernel_pagetable, pagetable_t user_pagetable) {
   pagetable_t user_pa = (pagetable_t)PTE2PA(user_pagetable[0]);
   pagetable_t kernel_pa = (pagetable_t)PTE2PA(kernel_pagetable[0]);
 
-  for(int i = 0; i < 0x60; i++) {
+  for(int i = 0; i < 96; i++) {
     // 将用户页表复制到内核页表中
     kernel_pa[i] = user_pa[i];
   }
