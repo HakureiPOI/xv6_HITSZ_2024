@@ -540,6 +540,7 @@ void scheduler(void) {
     }
 #if !defined(LAB_FS)
     if (found == 0) {
+      kvminithart();
       intr_on();
       asm volatile("wfi");
     }
